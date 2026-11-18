@@ -1,0 +1,9 @@
+# 依赖
+node_modules/
+
+# 浏览器测试产物
+test.js
+preview.png
+
+# WorkBuddy 工作区数据
+.workbuddy/

@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>骨骼锚定图 · 交互原型</title>
+<style>
+  :root{
+    --bg:#f5f5f2; --surface:#ffffff; --line:#e3e2dc;
+    --ink:#2c2c2a; --sub:#77766f; --hint:#a09e96;
+    --accent:#534ab7; --accent-soft:#eeedfe; --accent-line:#d6d2f5;
+    --danger:#a32d2d; --danger-soft:#fceaea;
+    --radius:12px;
+    --font: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{height:100%;}
+  body{font-family:var(--font); background:var(--bg); color:var(--ink); font-size:14px; -webkit-font-smoothing:antialiased;}
+  .app{display:flex; flex-direction:column; height:100vh;}
+
+  header{display:flex; align-items:center; gap:14px; padding:12px 20px; background:var(--surface); border-bottom:1px solid var(--line);}
+  header .logo{width:26px; height:26px; border-radius:7px; background:var(--accent); position:relative; flex:none;}
+  header .logo::before{content:""; position:absolute; left:7px; top:6px; width:12px; height:12px; border:2px solid #fff; border-radius:50%;}
+  header .logo::after{content:""; position:absolute; left:12px; top:16px; width:2px; height:7px; background:#fff;}
+  header h1{font-size:15px; font-weight:600;}
+  header .tag{font-size:12px; color:var(--sub); font-weight:400;}
+  header .spacer{flex:1;}
+  button{font-family:var(--font); cursor:pointer; border:1px solid var(--line); background:var(--surface); color:var(--ink); border-radius:9px; padding:8px 14px; font-size:13px; transition:.12s;}
+  button:hover{background:#fafaf8; border-color:#cfcdc5;}
+  button.primary{background:var(--accent); border-color:var(--accent); color:#fff;}
+  button.primary:hover{background:#463fa0;}
+  button.ghost{border-color:transparent; background:transparent; color:var(--sub);}
+  button.ghost:hover{background:#f0f0ec;}
+
+  .body{display:flex; flex:1; min-height:0;}
+  .script{width:270px; flex:none; background:var(--surface); border-right:1px solid var(--line); display:flex; flex-direction:column;}
+  .script .head{padding:16px 18px 8px;}
+  .script .head .t{font-size:13px; font-weight:600;}
+  .script .head .d{font-size:12px; color:var(--hint); margin-top:3px;}
+  .script textarea{flex:1; margin:8px 14px 14px; padding:12px; border:1px solid var(--line); border-radius:10px; resize:none; font-family:var(--font); font-size:13px; line-height:1.8; color:var(--ink); background:#fcfcfb; outline:none;}
+  .script textarea:focus{border-color:var(--accent-line);}
+
+  .stage{flex:1; min-width:0; position:relative; display:flex; flex-direction:column; align-items:center; padding:14px 18px 0;}
+  .hint{font-size:12px; color:var(--hint); margin-bottom:8px; text-align:center;}
+  #canvas{width:100%; max-width:1080px; flex:1; min-height:0; background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); touch-action:none; user-select:none;}
+  .char,.prop{cursor:grab;}
+  .char:active,.prop:active{cursor:grabbing;}
+  .sel-ring{fill:none; stroke:var(--accent); stroke-width:1.5; stroke-dasharray:4 3;}
+
+  .toolbar{width:100%; max-width:1080px; min-height:60px; display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:12px 0 16px;}
+  .tb-group{display:flex; align-items:center; gap:8px;}
+  .tb-sep{width:1px; height:26px; background:var(--line); margin:0 2px;}
+  .tb-label{font-size:12px; color:var(--sub); margin-right:2px;}
+  .tb-sel{display:flex; align-items:center; gap:8px; flex-wrap:wrap; background:var(--accent-soft); border:1px solid var(--accent-line); border-radius:11px; padding:7px 10px;}
+  .tb-sel[hidden]{display:none;}
+  .seg{display:flex; border:1px solid var(--line); border-radius:9px; overflow:hidden;}
+  .seg button{border:0; border-radius:0; padding:7px 11px; border-right:1px solid var(--line); background:var(--surface);}
+  .seg button:last-child{border-right:0;}
+  .seg button.on{background:var(--accent); color:#fff;}
+  .seg button:hover:not(.on){background:#f4f3fb;}
+  .name-input{border:1px solid var(--line); border-radius:8px; padding:7px 10px; font-family:var(--font); font-size:13px; width:110px; outline:none;}
+  .name-input:focus{border-color:var(--accent-line);}
+  button.del{color:var(--danger); border-color:#eccfcf;}
+  button.del:hover{background:var(--danger-soft);}
+  .pop{position:relative;}
+  .pop .menu{display:none; position:absolute; bottom:calc(100% + 8px); left:0; background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:6px; box-shadow:0 6px 20px rgba(0,0,0,.08); z-index:5;}
+  .pop.open .menu{display:block;}
+  .pop .menu button{display:block; width:100%; text-align:left; border:0; padding:8px 12px; border-radius:7px;}
+  .pop .menu button:hover{background:var(--accent-soft);}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="logo"></div>
+    <h1>骨骼锚定图 <span class="tag">· 静态交互原型</span></h1>
+    <div class="spacer"></div>
+    <button id="btn-reset">重置示例</button>
+    <button class="primary" id="btn-export">导出 PNG</button>
+  </header>
+
+  <div class="body">
+    <aside class="script">
+      <div class="head">
+        <div class="t">场景剧本</div>
+        <div class="d">此处仅作展示 · AI 解析后续接入</div>
+      </div>
+      <textarea id="script" spellcheck="false">场景：客厅，夜里。
+
+张三坐在沙发上，李四站在他对面，王五背对着两人走向门口。茶几摆在三人中间。</textarea>
+    </aside>
+
+    <div class="stage">
+      <div class="hint">拖动人物或道具移动位置 · 单击选中后底部切换姿势与朝向</div>
+      <svg id="canvas" viewBox="0 0 1000 640" xmlns="http://www.w3.org/2000/svg"></svg>
+
+      <div class="toolbar">
+        <div class="tb-group">
+          <button class="primary" id="btn-addchar">+ 人物</button>
+          <div class="pop" id="prop-pop">
+            <button id="btn-addprop">+ 道具</button>
+            <div class="menu" id="prop-menu"></div>
+          </div>
+        </div>
+
+        <div class="tb-sep"></div>
+
+        <div class="tb-sel" id="tb-sel" hidden>
+          <span class="tb-label" id="sel-name">人物</span>
+          <div class="seg" id="pose-seg"></div>
+          <div class="seg" id="face-seg"></div>
+          <input class="name-input" id="name-input" maxlength="12">
+          <button class="del" id="btn-del">删除</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ============ 配置（便于后续调整） ============ */
+const POSES = {
+  stand: '站', sit: '坐', walk: '走', wave: '挥手'
+};
+const FACINGS = {
+  front: '正', right: '右', back: '背', left: '左'
+};
+const PROP_TYPES = {
+  table: '茶几', sofa: '沙发', door: '门', plant: '盆栽'
+};
+const COLORS = ['#534ab7','#0f6e56','#993c1d','#185fa5','#993556','#3b6d11'];
+
+/* ============ 状态 ============ */
+let state, dragId = null, seq = 0;
+
+function sample(){
+  seq = 0;
+  return {
+    characters: [
+      {id:'c'+(++seq), name:'张三', u:0.32, v:0.78, pose:'sit',   facing:'front'},
+      {id:'c'+(++seq), name:'李四', u:0.62, v:0.50, pose:'stand', facing:'front'},
+      {id:'c'+(++seq), name:'王五', u:0.70, v:0.30, pose:'walk',  facing:'back'}
+    ],
+    props: [
+      {id:'p'+(++seq), name:'茶几', u:0.47, v:0.66, type:'table'},
+      {id:'p'+(++seq), name:'沙发', u:0.30, v:0.82, type:'sofa'}
+    ],
+    selected: null
+  };
+}
+
+/* ============ 坐标：逻辑(u,v) <-> 屏幕 ============ */
+function groundY(v){ return 110 + v*410; }
+function groundHalf(v){ return 160 + v*300; }
+function toScreen(u,v){ return {x:500 + (u-0.5)*2*groundHalf(v), y:groundY(v)}; }
+function scaleAt(v){ return 0.6 + v*0.7; }
+function clamp(n,a,b){ return Math.max(a, Math.min(b,n)); }
+function toLogic(x,y){
+  const v = clamp((y-110)/410, 0, 1);
+  const u = clamp((x-500)/(2*groundHalf(v)) + 0.5, 0, 1);
+  return {u, v};
+}
+
+/* ============ 绘制：地面网格 ============ */
+function drawGround(){
+  let s = '';
+  const vTop=0, vBot=1;
+  const TL=toScreen(0,vTop), TR=toScreen(1,vTop), BR=toScreen(1,vBot), BL=toScreen(0,vBot);
+  s += `<polygon points="${TL.x},${TL.y} ${TR.x},${TR.y} ${BR.x},${BR.y} ${BL.x},${BL.y}" fill="#fbfaf7" stroke="#dcd9cf" stroke-width="1"/>`;
+  for(let i=1;i<10;i++){
+    const v=i/10, a=toScreen(0,v), b=toScreen(1,v);
+    s += `<line x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="#eceae2" stroke-width="1"/>`;
+  }
+  for(let i=1;i<10;i++){
+    const u=i/10, a=toScreen(u,vTop), b=toScreen(u,vBot);
+    s += `<line x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="#eceae2" stroke-width="1"/>`;
+  }
+  return s;
+}
+
+/* ============ 绘制：火柴人 ============ */
+function posePoints(pose, facing){
+  // 相对脚底原点，x 右正、y 上负，基准身高约 100
+  const base = {
+    head:{x:0,y:-88,r:11}, neck:{x:0,y:-76}, shL:{x:-16,y:-72}, shR:{x:16,y:-72}, hip:{x:0,y:-42},
+    elL:{x:-22,y:-55}, haL:{x:-18,y:-38}, elR:{x:22,y:-55}, haR:{x:18,y:-38},
+    knL:{x:-10,y:-20}, ftL:{x:-12,y:0}, knR:{x:10,y:-20}, ftR:{x:12,y:0}
+  };
+  if(pose==='sit'){
+    Object.assign(base,{
+      knL:{x:24,y:-44}, ftL:{x:24,y:-4}, knR:{x:18,y:-46}, ftR:{x:18,y:-6},
+      elL:{x:-6,y:-55}, haL:{x:14,y:-45}, elR:{x:26,y:-57}, haR:{x:30,y:-46}
+    });
+  } else if(pose==='walk'){
+    Object.assign(base,{
+      knL:{x:18,y:-22}, ftL:{x:28,y:-2}, knR:{x:-16,y:-24}, ftR:{x:-26,y:-2},
+      elL:{x:-28,y:-56}, haL:{x:-34,y:-40}, elR:{x:28,y:-56}, haR:{x:34,y:-40}
+    });
+  } else if(pose==='wave'){
+    Object.assign(base,{
+      elL:{x:-30,y:-88}, haL:{x:-22,y:-108}
+    });
+  }
+  // 侧面：双腿前后错开，双臂同向
+  if(facing==='left' || facing==='right'){
+    const d = facing==='right' ? 1 : -1;
+    base.knL={x:-6*d,y:-22}; base.ftL={x:-18*d,y:0};
+    base.knR={x:14*d,y:-20}; base.ftR={x:26*d,y:0};
+    base.elL={x:18*d,y:-56}; base.haL={x:28*d,y:-48};
+    base.elR={x:-14*d,y:-56}; base.haR={x:-22*d,y:-44};
+  }
+  return base;
+}
+
+function figureSvg(ch, sx, sy, s, selected){
+  const p = posePoints(ch.pose, ch.facing);
+  const C = '#3f3a86';
+  const W = 3.2;
+  const pt = k => ({x:sx + p[k].x*s, y:sy + p[k].y*s});
+  const line = (a,b,w=W) => {const A=pt(a),B=pt(b); return `<line x1="${A.x}" y1="${A.y}" x2="${B.x}" y2="${B.y}" stroke="${C}" stroke-width="${w}" stroke-linecap="round"/>`;};
+  let g = '';
+  // 透明命中框：扩大可点区域，交互更好点
+  g += `<rect x="${sx-38}" y="${sy-125*s}" width="76" height="${132*s}" fill="transparent"/>`;
+  g += line('neck','hip');
+  g += line('shL','elL') + line('elL','haL');
+  g += line('shR','elR') + line('elR','haR');
+  g += line('hip','knL') + line('knL','ftL');
+  g += line('hip','knR') + line('knR','ftR');
+  const head = pt('head'), hr = p.head.r*s;
+  if(ch.facing==='back'){
+    g += `<circle cx="${head.x}" cy="${head.y}" r="${hr}" fill="${C}"/>`;
+    g += `<line x1="${sx}" y1="${pt('neck').y}" x2="${sx}" y2="${pt('hip').y}" stroke="#eeedfe" stroke-width="1.4" stroke-dasharray="3 3"/>`;
+  } else {
+    g += `<circle cx="${head.x}" cy="${head.y}" r="${hr}" fill="#ffffff" stroke="${C}" stroke-width="${W}"/>`;
+    if(ch.facing==='front'){
+      const e=hr*0.36, ey=head.y-hr*0.08;
+      g += `<circle cx="${head.x-e}" cy="${ey}" r="${hr*0.13}" fill="${C}"/>`;
+      g += `<circle cx="${head.x+e}" cy="${ey}" r="${hr*0.13}" fill="${C}"/>`;
+    } else {
+      const d = ch.facing==='right' ? 1 : -1;
+      g += `<path d="M ${head.x+d*hr*0.8} ${head.y} l ${d*hr*0.55} ${hr*0.28} l ${-d*hr*0.55} ${hr*0.2} z" fill="${C}"/>`;
+    }
+  }
+  // 名字标签
+  const ly = head.y - hr - 12*s;
+  g += `<rect x="${sx-30}" y="${ly-14}" width="60" height="20" rx="6" fill="#ffffff" stroke="#e3e2dc" stroke-width="1"/>`;
+  g += `<text x="${sx}" y="${ly}" font-family="Microsoft YaHei, sans-serif" font-size="${Math.max(12,12*s)}" fill="#2c2c2a" text-anchor="middle" dominant-baseline="central">${esc(ch.name)}</text>`;
+  if(selected){
+    g += `<rect class="sel-ring" x="${sx-34}" y="${sy-118*s}" width="68" height="${120*s}" rx="10"/>`;
+  }
+  return g;
+}
+
+/* ============ 绘制：道具 ============ */
+function propSvg(pr, sx, sy, s, selected){
+  const C='#854f0b', F='#f7e6c4';
+  let g='';
+  g += `<rect x="${sx-72}" y="${sy-132*s}" width="144" height="${138*s}" fill="transparent"/>`;
+  if(pr.type==='table'){
+    const w=64*s, h=26*s;
+    g += `<rect x="${sx-w/2}" y="${sy-h}" width="${w}" height="${h}" rx="3" fill="${F}" stroke="${C}" stroke-width="1.5"/>`;
+    g += `<line x1="${sx-w/2+8*s}" y1="${sy}" x2="${sx-w/2+8*s}" y2="${sy+14*s}" stroke="${C}" stroke-width="2"/>`;
+    g += `<line x1="${sx+w/2-8*s}" y1="${sy}" x2="${sx+w/2-8*s}" y2="${sy+14*s}" stroke="${C}" stroke-width="2"/>`;
+  } else if(pr.type==='sofa'){
+    const w=110*s, h=34*s;
+    g += `<rect x="${sx-w/2}" y="${sy-h}" width="${w}" height="${h}" rx="6" fill="${F}" stroke="${C}" stroke-width="1.5"/>`;
+    g += `<line x1="${sx}" y1="${sy-h}" x2="${sx}" y2="${sy}" stroke="${C}" stroke-width="1.2"/>`;
+  } else if(pr.type==='door'){
+    const w=46*s, h=110*s;
+    g += `<rect x="${sx-w/2}" y="${sy-h}" width="${w}" height="${h}" fill="#efece4" stroke="${C}" stroke-width="1.5"/>`;
+    g += `<circle cx="${sx+w/2-9*s}" cy="${sy-h/2}" r="${2.5*s}" fill="${C}"/>`;
+  } else if(pr.type==='plant'){
+    g += `<rect x="${sx-11*s}" y="${sy-18*s}" width="${22*s}" height="${18*s}" rx="2" fill="${F}" stroke="${C}" stroke-width="1.5"/>`;
+    g += `<circle cx="${sx}" cy="${sy-34*s}" r="${18*s}" fill="#cfe0b4" stroke="#3b6d11" stroke-width="1.2"/>`;
+  }
+  const ly = sy - (pr.type==='door'?120:pr.type==='plant'?62:pr.type==='sofa'?48:40)*s;
+  g += `<text x="${sx}" y="${ly}" font-family="Microsoft YaHei, sans-serif" font-size="${Math.max(12,12*s)}" fill="#854f0b" text-anchor="middle" dominant-baseline="central">${esc(pr.name)}</text>`;
+  if(selected){
+    g += `<rect class="sel-ring" x="${sx-70}" y="${sy-130*s}" width="140" height="${134*s}" rx="10"/>`;
+  }
+  return g;
+}
+
+function esc(t){ return String(t).replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+
+/* ============ 渲染 ============ */
+const svg = document.getElementById('canvas');
+function render(){
+  let s = drawGround();
+  state.props.forEach(pr=>{
+    const {x,y}=toScreen(pr.u,pr.v), sc=scaleAt(pr.v);
+    const on = state.selected && state.selected.type==='prop' && state.selected.id===pr.id;
+    s += `<g class="prop" data-id="${pr.id}">${propSvg(pr,x,y,sc,on)}</g>`;
+  });
+  state.characters.forEach(ch=>{
+    const {x,y}=toScreen(ch.u,ch.v), sc=scaleAt(ch.v);
+    const on = state.selected && state.selected.type==='char' && state.selected.id===ch.id;
+    s += `<g class="char" data-id="${ch.id}">${figureSvg(ch,x,y,sc,on)}</g>`;
+  });
+  svg.innerHTML = s;
+  renderToolbar();
+}
+
+/* ============ 工具条 ============ */
+const tbSel=document.getElementById('tb-sel'), selName=document.getElementById('sel-name');
+const poseSeg=document.getElementById('pose-seg'), faceSeg=document.getElementById('face-seg');
+const nameInput=document.getElementById('name-input');
+
+function selectedItem(){
+  if(!state.selected) return null;
+  const {type,id}=state.selected;
+  return (type==='char'?state.characters:state.props).find(o=>o.id===id) || null;
+}
+function renderToolbar(){
+  const it = selectedItem();
+  tbSel.hidden = !it;
+  if(!it) return;
+  selName.textContent = state.selected.type==='char' ? '人物' : '道具';
+  nameInput.value = it.name;
+  if(state.selected.type==='char'){
+    poseSeg.hidden=false; faceSeg.hidden=false;
+    poseSeg.innerHTML = Object.keys(POSES).map(k=>`<button data-pose="${k}" class="${it.pose===k?'on':''}">${POSES[k]}</button>`).join('');
+    faceSeg.innerHTML = Object.keys(FACINGS).map(k=>`<button data-face="${k}" class="${it.facing===k?'on':''}">${FACINGS[k]}</button>`).join('');
+  } else {
+    poseSeg.hidden=true; faceSeg.hidden=true;
+  }
+}
+
+poseSeg.addEventListener('click', e=>{
+  const k=e.target.dataset.pose; if(!k) return;
+  const it=selectedItem(); if(!it) return;
+  it.pose=k; render();
+});
+faceSeg.addEventListener('click', e=>{
+  const k=e.target.dataset.face; if(!k) return;
+  const it=selectedItem(); if(!it) return;
+  it.facing=k; render();
+});
+nameInput.addEventListener('input', e=>{
+  const it=selectedItem(); if(!it) return;
+  it.name=e.target.value; render();
+});
+document.getElementById('btn-del').addEventListener('click', ()=>{
+  if(!state.selected) return;
+  const {type,id}=state.selected;
+  const arr = type==='char'?state.characters:state.props;
+  const i=arr.findIndex(o=>o.id===id); if(i>=0) arr.splice(i,1);
+  state.selected=null; render();
+});
+
+/* ============ 添加 ============ */
+document.getElementById('btn-addchar').addEventListener('click', ()=>{
+  const ch={id:'c'+(++seq), name:'新人'+(state.characters.length+1), u:0.5, v:0.55, pose:'stand', facing:'front'};
+  state.characters.push(ch);
+  state.selected={type:'char',id:ch.id}; render();
+});
+const propPop=document.getElementById('prop-pop'), propMenu=document.getElementById('prop-menu');
+propMenu.innerHTML = Object.keys(PROP_TYPES).map(k=>`<button data-type="${k}">${PROP_TYPES[k]}</button>`).join('');
+document.getElementById('btn-addprop').addEventListener('click', e=>{ e.stopPropagation(); propPop.classList.toggle('open'); });
+propMenu.addEventListener('click', e=>{
+  const k=e.target.dataset.type; if(!k) return;
+  const pr={id:'p'+(++seq), name:PROP_TYPES[k], u:0.5, v:0.6, type:k};
+  state.props.push(pr);
+  state.selected={type:'prop',id:pr.id};
+  propPop.classList.remove('open'); render();
+});
+document.addEventListener('click', e=>{ if(!propPop.contains(e.target)) propPop.classList.remove('open'); });
+
+/* ============ 拖拽 & 选中 ============ */
+function clientToSvg(e){
+  const pt=svg.createSVGPoint(); pt.x=e.clientX; pt.y=e.clientY;
+  return pt.matrixTransform(svg.getScreenCTM().inverse());
+}
+svg.addEventListener('pointerdown', e=>{
+  const g=e.target.closest('[data-id]');
+  if(g){
+    const id=g.dataset.id;
+    const isChar = !!state.characters.find(o=>o.id===id);
+    state.selected={type:isChar?'char':'prop', id};
+    dragId=id; render(); e.preventDefault();
+  } else {
+    state.selected=null; render();
+  }
+});
+window.addEventListener('pointermove', e=>{
+  if(!dragId) return;
+  const arr=[...state.characters,...state.props];
+  const it=arr.find(o=>o.id===dragId); if(!it) return;
+  const p=clientToSvg(e);
+  const {u,v}=toLogic(p.x,p.y);
+  it.u=u; it.v=v; render();
+});
+window.addEventListener('pointerup', ()=>{ dragId=null; });
+window.addEventListener('keydown', e=>{
+  if(e.key==='Escape'){ state.selected=null; render(); }
+  if((e.key==='Delete'||e.key==='Backspace') && state.selected && document.activeElement!==nameInput){
+    document.getElementById('btn-del').click();
+  }
+});
+
+/* ============ 导出 / 重置 ============ */
+document.getElementById('btn-reset').addEventListener('click', ()=>{ state=sample(); render(); });
+document.getElementById('btn-export').addEventListener('click', ()=>{
+  const prev=state.selected; state.selected=null; render();
+  const clone=svg.cloneNode(true);
+  clone.setAttribute('width','1000'); clone.setAttribute('height','640');
+  const xml=new XMLSerializer().serializeToString(clone);
+  const img=new Image();
+  const url=URL.createObjectURL(new Blob([xml],{type:'image/svg+xml;charset=utf-8'}));
+  img.onload=()=>{
+    const c=document.createElement('canvas'); c.width=2000; c.height=1280;
+    const ctx=c.getContext('2d'); ctx.scale(2,2);
+    ctx.fillStyle='#ffffff'; ctx.fillRect(0,0,1000,640);
+    ctx.drawImage(img,0,0);
+    c.toBlob(b=>{
+      const a=document.createElement('a'); a.href=URL.createObjectURL(b);
+      a.download='锚定图.png'; a.click();
+    });
+    URL.revokeObjectURL(url);
+    state.selected=prev; render();
+  };
+  img.onerror=()=>{ URL.revokeObjectURL(url); state.selected=prev; render(); alert('导出失败'); };
+  img.src=url;
+});
+
+state=sample();
+render();
+</script>
+</body>
+</html>
